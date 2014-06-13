@@ -1,0 +1,8 @@
+; $Id: $
+name = Weather Comparison
+description = Compare the weather between two locations.
+core = 7.x
+package = Weather 
+configure = admin/config/services/weather
+
+

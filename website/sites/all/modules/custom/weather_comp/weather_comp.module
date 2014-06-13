@@ -1,0 +1,138 @@
+<?php
+
+/**
+ * Compare the weather reports between two places. 
+ */
+
+/**
+ * Implements hook_menu().
+ */
+function weather_comp_menu() {
+  $items = array();
+
+  // Administration 
+  $items['admin/config/services/weather'] = array(
+    'title' => 'Weather settings',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('weather_comp_admin_settings'),
+    'access callback' => 'user_access',
+    'access arguments' => array('administer site configuration'),
+    'description' => 'Select locations for weather comparison.',
+    'type' => MENU_NORMAL_ITEM,
+  );
+
+  // Comparison page 
+  $items['weather'] = array(
+    'title' => 'Weather comparison',
+    'page callback' => 'weather_comp_comparison',
+    'access callback' => 'user_access',
+    'access arguments' => array('access content'),
+    'type' => MENU_NORMAL_ITEM,
+  );
+
+  return $items;
+}
+
+/**
+ * Menu callback for admin/config/services/weather.
+ */
+function weather_comp_admin_settings() {
+
+  $form['weather_comp_location_1']  = array(
+    '#type' => 'textfield',
+    '#title' => t('First location'),
+    '#default_value' => variable_get('weather_comp_location_1', 'sarasota,fl'),
+  );
+
+  $form['weather_comp_location_2']  = array(
+    '#type' => 'textfield',
+    '#title' => t('Second location'),
+    '#default_value' => variable_get('weather_comp_location_2', 'frisco,tx'),
+  );
+
+  $form = system_settings_form($form);
+
+  return $form;
+}
+
+/**
+ * Comparison page.
+ */
+function weather_comp_comparison() {
+
+  $weather_url = variable_get('weather_comp_api_url', 'http://api.openweathermap.org/data/2.5/weather?q=');
+
+  // check for cached version of location data
+  $first  = cache_get('weather_comp_location_1');
+
+  if (empty($first)) {
+    $location_1  = variable_get('weather_comp_location_1');
+ 
+    $first  = drupal_http_request($weather_url . $location_1);
+    cache_set('weather_comp_location_1', $first->data, 'cache', REQUEST_TIME + 60*5);       // cache for 5 minutes
+  }
+
+  // check for cached version of location data
+  $second = cache_get('weather_comp_location_2');
+
+  if (empty($second)) {
+    $location_2  = variable_get('weather_comp_location_2');
+ 
+    $second =  drupal_http_request($weather_url . $location_2);
+    cache_set('weather_comp_location_2', $second->data, 'cache', REQUEST_TIME + 60*5);       // cache for 5 minutes
+  }
+
+  $first = json_decode($first->data);
+  print theme('weather-location', array('data'=>$first));
+
+  $second = json_decode($second->data);
+  print theme('weather-location', array('data'=>$second));
+
+  $diff = weather_comp_diff($first, $second);
+print_r($diff);
+ 
+}
+
+/**
+ * Theme functions.
+ */
+function weather_comp_theme() {
+  $theme = array(
+    'weather-location' => array(
+      'variables' => array('data' => NULL),
+      'template' => 'templates/weather_location'
+    ),
+  );
+
+  return $theme;
+}
+
+/**
+ * Convert degrees Kelvin to Fahrenheit.
+ * ÂF = (ÂºK - 273.15)* 1.8000 + 32.00
+ */
+function weather_comp_k_to_f($kelvin, $round = FALSE) {
+  $temp = ($kelvin - 273.15) * 1.8 + 32; 
+  return ($round) ? round($temp) : $temp;
+} 
+
+function weather_comp_diff($first, $second) {
+  
+  $diff = new stdClass();
+
+  $diff->name = $first->name . ' - ' . $second->name;
+  $diff->main = weather_comp_obj_diff($first->main, $second->main);
+  return $diff; 
+}
+
+function weather_comp_obj_diff($first, $second) {
+  $diff = new stdClass();
+  foreach ($first as $prop => $val) {
+    if (isset($second->$prop)) {
+      $diff->$prop = $first->$prop - $second->$prop;
+    }
+  }
+
+  return $diff;
+}
+
